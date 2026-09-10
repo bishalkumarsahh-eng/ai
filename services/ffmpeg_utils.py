@@ -20,6 +20,8 @@ def ffmpeg_env():
     env = os.environ.copy()
     lib_dirs = [
         "/app/.apt/usr/lib/x86_64-linux-gnu",
+        "/app/.apt/usr/lib/x86_64-linux-gnu/pulseaudio",
+        "/app/.apt/usr/lib/pulseaudio",
         "/app/.apt/usr/lib",
         "/app/.apt/lib/x86_64-linux-gnu",
         "/app/.apt/lib",
