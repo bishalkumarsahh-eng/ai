@@ -1,29 +1,60 @@
-import pathlib, tempfile, subprocess, os, shutil
+
+import pathlib, tempfile, subprocess, shutil
 from .story import make_story
 from .images import make_scene_image
 from .voice import make_voice
 
+def ffmpeg_path():
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception as e:
+        raise RuntimeError(
+            "FFmpeg is unavailable. imageio-ffmpeg failed to install/find its bundled "
+            f"binary: {e}"
+        )
+
+def run_ffmpeg(cmd):
+    try:
+        result = subprocess.run(
+            cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or "").strip()
+        raise RuntimeError(f"FFmpeg failed: {err[-1200:]}") from e
+
 async def create_video(prompt, progress=None):
     async def p(s):
-        if progress: await progress(s)
+        if progress:
+            await progress(s)
 
-    work=pathlib.Path(tempfile.mkdtemp(prefix="velocity_cartoon_"))
+    work = pathlib.Path(tempfile.mkdtemp(prefix="velocity_cartoon_"))
+    ffmpeg = ffmpeg_path()
+
     try:
         await p("🧠 Writing story + scene plan…")
-        story=await make_story(prompt)
-        scenes=story.get("scenes",[])[:8]
-        if not scenes: raise RuntimeError("No scenes were generated.")
+        story = await make_story(prompt)
+        scenes = story.get("scenes", [])[:8]
+        if not scenes:
+            raise RuntimeError("No scenes were generated.")
 
-        clips=[]
-        for i, scene in enumerate(scenes,1):
+        clips = []
+        for i, scene in enumerate(scenes, 1):
             await p(f"🎨 Generating cartoon scene {i}/{len(scenes)}…")
-            img=await make_scene_image(scene["visual"],work/f"scene_{i}.jpg")
+            img = await make_scene_image(
+                scene["visual"], work / f"scene_{i}.jpg"
+            )
+
             await p(f"🗣️ Creating voice {i}/{len(scenes)}…")
-            audio=await make_voice(scene["dialogue"],work/f"voice_{i}.mp3")
-            clip=work/f"clip_{i}.mp4"
-            duration=float(scene.get("duration",6))
-            # Gentle Ken-Burns motion, 1920x1080 YouTube canvas.
-            vf=(
+            audio = await make_voice(
+                scene["dialogue"], work / f"voice_{i}.mp3"
+            )
+
+            clip = work / f"clip_{i}.mp4"
+            duration = float(scene.get("duration", 6))
+
+            vf = (
                 "scale=1920:1080:force_original_aspect_ratio=increase,"
                 "crop=1920:1080,"
                 "zoompan=z='min(zoom+0.0008,1.08)':"
@@ -31,22 +62,45 @@ async def create_video(prompt, progress=None):
                 "d=180:s=1920x1080:fps=30,"
                 "format=yuv420p"
             )
-            cmd=["ffmpeg","-y","-loop","1","-i",str(img),"-i",str(audio),
-                 "-t",str(duration),"-vf",vf,"-c:v","libx264","-preset","veryfast",
-                 "-pix_fmt","yuv420p","-r","30","-c:a","aac","-b:a","192k",
-                 "-shortest",str(clip)]
-            subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+            cmd = [
+                ffmpeg, "-y",
+                "-loop", "1", "-i", str(img),
+                "-i", str(audio),
+                "-t", str(duration),
+                "-vf", vf,
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-pix_fmt", "yuv420p",
+                "-r", "30",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                str(clip),
+            ]
+            run_ffmpeg(cmd)
             clips.append(clip)
 
         await p("🎞️ Joining scenes + optimizing YouTube output…")
-        concat=work/"concat.txt"
-        concat.write_text("\n".join("file '"+str(c)+"'" for c in clips))
-        output=work/"velocity_cartoon_1080p.mp4"
-        subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",str(concat),
-                        "-c","copy","-movflags","+faststart",str(output)],
-                       check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        concat = work / "concat.txt"
+        concat.write_text(
+            "\n".join("file '" + str(c).replace("'", "'\\''") + "'" for c in clips),
+            encoding="utf-8",
+        )
+
+        output = work / "velocity_cartoon_1080p.mp4"
+        run_ffmpeg([
+            ffmpeg, "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat),
+            "-c", "copy",
+            "-movflags", "+faststart",
+            str(output),
+        ])
+
         await p("✅ Video ready — sending it to Telegram…")
         return str(output)
+
     except Exception:
-        shutil.rmtree(work,ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)
         raise
