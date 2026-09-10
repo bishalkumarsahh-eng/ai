@@ -1,5 +1,4 @@
 import subprocess, pathlib
-from .ffmpeg_utils import ffmpeg_bin
 
 def render_lipsync_video(clips, output):
     concat = output.parent / "concat.txt"
@@ -9,7 +8,7 @@ def render_lipsync_video(clips, output):
         lines.append("file '" + safe + "'")
     concat.write_text("\n".join(lines), encoding="utf-8")
     subprocess.run([
-        ffmpeg_bin(),"-y","-f","concat","-safe","0","-i",str(concat),
+        "ffmpeg","-y","-f","concat","-safe","0","-i",str(concat),
         "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,"
               "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
         "-c:v","libx264","-preset","veryfast","-r","30",
