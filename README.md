@@ -17,8 +17,11 @@ verify the current commercial-use terms of every provider/model you use.
 
 Config Vars:
 BOT_TOKEN = your Telegram bot token
+GEMINI_API_KEY = your free Google Gemini API key
+POLLINATIONS_API_KEY = your Pollinations API key
 
 Optional:
+GEMINI_MODEL=gemini-2.5-flash-lite
 IMAGE_MODEL=flux
 IMAGE_WIDTH=1536
 IMAGE_HEIGHT=864
