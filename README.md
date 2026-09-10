@@ -1,60 +1,28 @@
-# VELOCITY LONG-FORM TALKING CARTOON BOT v3
+# VELOCITY LONG-FORM TALKING CARTOON BOT V5
 
-## What it does
-- Telegram `/cartoon` command
-- Hinglish or English
-- 5 / 10 / 20 / 30 minute planning
-- 6-10 story chapters
-- character descriptions kept in every scene prompt
-- cartoon scene generation
-- AI voice
-- actual audio-driven talking-head lip-sync through a public Hugging Face ZeroGPU SadTalker Space
-- 1920x1080 final MP4
-
-## Usage
-/cartoon hinglish 10 A poor boy falls in love with a rich girl.
-/cartoon english 20 A magical adventure story about two friends.
+Chapter-wise long-form Telegram cartoon generator with Hinglish/English, AI story planning,
+cartoon scenes, Edge-TTS voices, audio-driven SadTalker lip-sync and 1080p final rendering.
 
 ## Heroku Config Vars
 BOT_TOKEN=...
 GEMINI_API_KEY=...
 POLLINATIONS_API_KEY=...
+HF_TOKEN=...
 
 Optional:
 GEMINI_MODEL=gemini-3.5-flash-lite
 IMAGE_MODEL=flux
-HF_TOKEN=...
 LIPSYNC_SPACE=henrybit/SadTalker-Demo
 TTS_VOICE_HINGLISH=en-IN-NeerjaNeural
 TTS_VOICE_ENGLISH=en-US-AriaNeural
 
-HF_TOKEN is optional for a public Space, but authenticated access can improve reliability/rate limits.
-
-## Buildpacks
-Python:
+## Buildpack
 https://github.com/heroku/heroku-buildpack-python
 
-APT:
-https://github.com/heroku/heroku-buildpack-apt
+## Notes
+The lip-sync client converts generated MP3 speech to mono 16 kHz WAV, retries the public
+ZeroGPU Space up to three times, and uses the current /generate API. The Space expects a
+clear face portrait; dialogue prompts therefore request large, unobstructed faces.
 
-Aptfile installs ffmpeg.
-
-## Important reality check
-The public ZeroGPU lip-sync Space is shared infrastructure. Hugging Face documents
-that ZeroGPU Spaces are free to use but have account-based quotas and can have queueing.
-The included code therefore fails clearly if the Space is unavailable instead of pretending
-a video is lip-synced.
-
-SadTalker is a talking-head model: it animates a portrait/full image with speech, not
-full-body cinematic acting. For higher-end full-scene animation, add a video-generation
-stage (for example image-to-video) before/around lip-sync.
-
-Long jobs may exceed Heroku's request/process constraints or temporary disk limits.
-The bot is a prototype for chapter-wise generation; for production, use a persistent
-job queue and object storage.
-
-## Lip-sync implementation
-The lip-sync integration targets the current `henrybit/SadTalker-Demo` `/generate`
-endpoint and its six inputs. The client authentication code supports both `token=`
-and legacy `hf_token=` forms. Hugging Face ZeroGPU usage is quota/queue based, so
-long projects can take time and may need retries.
+The public Space is shared infrastructure and can queue/fail. SadTalker animates a portrait,
+not full-body cinematic acting. Long videos are assembled from many short scene clips.
