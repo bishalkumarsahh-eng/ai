@@ -1,4 +1,5 @@
 import pathlib,tempfile,shutil,os,asyncio
+from .ffmpeg_utils import ffmpeg_bin, ffmpeg_env
 from .story import make_story
 from .images import make_image
 from .voice import make_voice
@@ -56,13 +57,13 @@ async def generate_project(idea,language,minutes,progress=None):
                 clip=cdir/f"scene_{i}.mp4"
                 import subprocess
                 subprocess.run([
-                    "ffmpeg","-y","-loop","1","-i",str(img),
+                    ffmpeg_bin(),"-y","-loop","1","-i",str(img),
                     "-t",str(scene.get("duration",6)),
                     "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,"
                           "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
                     "-c:v","libx264","-preset","veryfast","-r","30",
                     "-an",str(clip)
-                ],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                ],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=ffmpeg_env())
                 final_clips.append(clip)
 
         await p("🎞️ Joining all chapters into the final YouTube video…")
