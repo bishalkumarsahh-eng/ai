@@ -1,66 +1,58 @@
-import os
-import asyncio
-import shutil
+import os, asyncio, shutil, subprocess, pathlib, time
 from gradio_client import Client, handle_file
 
 DEFAULT_SPACE = "henrybit/SadTalker-Demo"
 
 
 def _make_client(space, token):
-    """Support both old and new gradio_client authentication APIs."""
-    if not token:
-        return Client(space)
-    try:
-        return Client(space, token=token)
-    except TypeError:
+    if token:
         try:
-            return Client(space, hf_token=token)
+            return Client(space, token=token)
         except TypeError:
-            return Client(space, headers={"Authorization": f"Bearer {token}"})
+            try:
+                return Client(space, hf_token=token)
+            except TypeError:
+                return Client(space, headers={"Authorization": f"Bearer {token}"})
+    return Client(space)
 
 
 def _result_path(result):
-    """Extract a local file path from common Gradio result formats."""
     if isinstance(result, (list, tuple)):
-        if not result:
-            return None
-        # Current SadTalker returns one video output, but tolerate nested values.
-        for item in result:
-            path = _result_path(item)
-            if path:
-                return path
+        for x in result:
+            p = _result_path(x)
+            if p:
+                return p
         return None
     if isinstance(result, dict):
-        for key in ("path", "url"):
-            value = result.get(key)
-            if value:
-                return value
-        return None
-    path = getattr(result, "path", None)
-    if path:
-        return path
-    url = getattr(result, "url", None)
-    if url:
-        return url
-    if isinstance(result, str):
-        return result
-    return None
+        return result.get("path") or result.get("url")
+    p = getattr(result, "path", None)
+    if p:
+        return p
+    u = getattr(result, "url", None)
+    if u:
+        return u
+    return result if isinstance(result, str) else None
+
+
+def _to_wav(audio, workdir):
+    out = pathlib.Path(workdir) / "driving.wav"
+    subprocess.run([
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(audio), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out)
+    ], check=True)
+    return out
 
 
 def _run_lipsync(space, token, image, audio):
     client = _make_client(space, token)
-
-    # Verified against the current henrybit/SadTalker-Demo app.py.
-    # Its /generate function has exactly these six inputs:
-    # source_image, driven_audio, preprocess, still_mode,
-    # pose_style, expression_scale.
+    # Current henrybit/SadTalker-Demo exposes /generate with these six inputs.
     return client.predict(
         handle_file(str(image)),
         handle_file(str(audio)),
-        "crop",       # preprocess
-        False,         # still_mode
-        0,             # pose_style
-        1.0,           # expression_scale
+        "crop",
+        False,
+        0,
+        1.0,
         api_name="/generate",
     )
 
@@ -68,34 +60,32 @@ def _run_lipsync(space, token, image, audio):
 async def make_lipsync(image, audio, outfile):
     space = os.getenv("LIPSYNC_SPACE", DEFAULT_SPACE)
     token = os.getenv("HF_TOKEN") or None
+    workdir = pathlib.Path(outfile).parent / "_lipsync"
+    workdir.mkdir(parents=True, exist_ok=True)
+    wav = _to_wav(audio, workdir)
 
-    try:
-        result = await asyncio.to_thread(
-            _run_lipsync, space, token, image, audio
-        )
-        source = _result_path(result)
-        if not source:
-            raise RuntimeError(f"Lip-sync Space returned no video file: {result!r}")
+    last = None
+    for attempt in range(1, 4):
+        try:
+            result = await asyncio.to_thread(_run_lipsync, space, token, image, wav)
+            source = _result_path(result)
+            if not source:
+                raise RuntimeError(f"Space returned no video: {result!r}")
+            if str(source).startswith(("http://", "https://")):
+                raise RuntimeError("Space returned a remote URL instead of a local video file")
+            if not os.path.exists(str(source)):
+                raise RuntimeError(f"Returned video does not exist: {source}")
+            shutil.copyfile(str(source), str(outfile))
+            if os.path.getsize(str(outfile)) == 0:
+                raise RuntimeError("Returned video is empty")
+            return str(outfile)
+        except Exception as e:
+            last = e
+            if attempt < 3:
+                await asyncio.sleep(5 * attempt)
 
-        # Gradio normally downloads file outputs to a local cache path.
-        # If a URL is returned, gradio_client should generally have downloaded it;
-        # reject a remote URL rather than creating a corrupt output.
-        if str(source).startswith(("http://", "https://")):
-            raise RuntimeError(
-                "Lip-sync Space returned a remote URL instead of a local file. "
-                "Please retry or use a newer gradio_client."
-            )
-
-        if not os.path.exists(str(source)):
-            raise RuntimeError(f"Lip-sync output file does not exist: {source}")
-
-        shutil.copyfile(str(source), str(outfile))
-        if not os.path.exists(str(outfile)) or os.path.getsize(str(outfile)) == 0:
-            raise RuntimeError("Lip-sync output video is empty.")
-        return outfile
-    except Exception as e:
-        raise RuntimeError(
-            "Lip-sync generation failed. The Hugging Face Space may be busy, "
-            "out of ZeroGPU quota, or temporarily unavailable. "
-            f"Details: {e}"
-        ) from e
+    raise RuntimeError(
+        "Lip-sync service failed after 3 attempts. "
+        "The public ZeroGPU Space may be busy or its current runtime may have failed. "
+        f"Last error: {last}"
+    ) from last

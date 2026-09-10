@@ -32,8 +32,10 @@ async def generate_project(idea,language,minutes,progress=None):
                 f'{c["name"]}: {c["description"]}' for c in story.get("characters",[])
             )
             prompt=(
-                "2D/3D high-quality animated cartoon film frame, cinematic lighting, "
-                "consistent character design, clean faces, front-facing when speaking. "
+                "High-quality 2D/3D animated cartoon movie frame, cinematic lighting, "
+                "consistent character design. For dialogue scenes, show the main speaking "
+                "character in a clear medium close-up, face large and unobstructed, front-facing "
+                "or 3/4 view, visible mouth, eyes and chin, no sunglasses, no text, no watermark. "
                 + character_text + " | " + visual
             )
             img=await make_image(prompt,cdir/f"scene_{i}.jpg")
