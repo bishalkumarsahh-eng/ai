@@ -1,28 +1,35 @@
-# VELOCITY LONG-FORM TALKING CARTOON BOT V5
+# VELOCITY LONG-FORM TALKING CARTOON BOT V13
 
-Chapter-wise long-form Telegram cartoon generator with Hinglish/English, AI story planning,
-cartoon scenes, Edge-TTS voices, audio-driven SadTalker lip-sync and 1080p final rendering.
+Heroku controls the Telegram bot, story/chapter generation, images, TTS and final 1080p
+rendering. Lip-sync is moved to a separate GPU worker so the bot no longer depends on the
+public Hugging Face ZeroGPU Space or its daily quota.
 
 ## Heroku Config Vars
 BOT_TOKEN=...
 GEMINI_API_KEY=...
 POLLINATIONS_API_KEY=...
-HF_TOKEN=...
+LIPSYNC_API_URL=https://YOUR-GPU-WORKER
+LIPSYNC_API_KEY=...
 
 Optional:
 GEMINI_MODEL=gemini-3.5-flash-lite
 IMAGE_MODEL=flux
-LIPSYNC_SPACE=henrybit/SadTalker-Demo
 TTS_VOICE_HINGLISH=en-IN-NeerjaNeural
 TTS_VOICE_ENGLISH=en-US-AriaNeural
+LIPSYNC_TIMEOUT=900
+LIPSYNC_RETRIES=2
 
-## Buildpack
-https://github.com/heroku/heroku-buildpack-python
+HF_TOKEN and LIPSYNC_SPACE are NO LONGER USED.
 
-## Notes
-The lip-sync client converts generated MP3 speech to mono 16 kHz WAV, retries the public
-ZeroGPU Space up to three times, and uses the current /generate API. The Space expects a
-clear face portrait; dialogue prompts therefore request large, unobstructed faces.
+## Heroku
+Buildpack: python only is sufficient for the bot. static-ffmpeg supplies the app's local
+FFmpeg binary; Apt FFmpeg is no longer required.
 
-The public Space is shared infrastructure and can queue/fail. SadTalker animates a portrait,
-not full-body cinematic acting. Long videos are assembled from many short scene clips.
+## GPU worker
+See gpu_worker/README.md and gpu_worker/Dockerfile. It runs SadTalker locally on an NVIDIA
+GPU and exposes POST /v1/lipsync. The official SadTalker project documents its pretrained
+checkpoints and Docker/Linux setup. https://github.com/OpenTalker/SadTalker
+
+## Long videos
+Stories remain chapter-wise. Each dialogue scene is sent to the external GPU worker and the
+resulting clips are joined by Heroku into a 1920x1080 MP4.
