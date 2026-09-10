@@ -17,11 +17,8 @@ verify the current commercial-use terms of every provider/model you use.
 
 Config Vars:
 BOT_TOKEN = your Telegram bot token
-GEMINI_API_KEY = your free Google Gemini API key
-POLLINATIONS_API_KEY = your Pollinations API key
 
 Optional:
-GEMINI_MODEL=gemini-2.5-flash-lite
 IMAGE_MODEL=flux
 IMAGE_WIDTH=1536
 IMAGE_HEIGHT=864
@@ -43,3 +40,9 @@ behind a separate GPU worker later without changing the Telegram interface.
 
 ## YouTube
 The output is 16:9, 1920x1080, H.264/AAC, 30 fps, and fast-start enabled.
+
+
+## FFmpeg fix
+This version does NOT depend on the Heroku APT buildpack for FFmpeg.
+`imageio-ffmpeg` installs a packaged FFmpeg binary through pip and the application
+uses that binary directly. You can remove the APT buildpack from Heroku.
