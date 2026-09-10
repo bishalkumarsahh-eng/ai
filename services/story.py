@@ -1,4 +1,4 @@
-import os,json,urllib.request,urllib.error
+import os,json,re,urllib.request,urllib.error
 
 def gemini(prompt):
     key=os.getenv("GEMINI_API_KEY")
