@@ -52,3 +52,9 @@ stage (for example image-to-video) before/around lip-sync.
 Long jobs may exceed Heroku's request/process constraints or temporary disk limits.
 The bot is a prototype for chapter-wise generation; for production, use a persistent
 job queue and object storage.
+
+## Lip-sync implementation
+The lip-sync integration targets the current `henrybit/SadTalker-Demo` `/generate`
+endpoint and its six inputs. The client authentication code supports both `token=`
+and legacy `hf_token=` forms. Hugging Face ZeroGPU usage is quota/queue based, so
+long projects can take time and may need retries.
