@@ -1,10 +1,12 @@
-import os, asyncio, pathlib
+import os, edge_tts
 
-async def make_voice(text, output):
-    # Edge TTS is used because it requires no paid API account.
-    # For a production/commercial channel, verify the provider's current terms.
-    import edge_tts
-    voice=os.getenv("TTS_VOICE","en-US-AriaNeural")
-    communicate=edge_tts.Communicate(text, voice)
-    await communicate.save(str(output))
-    return output
+async def make_voice(text,outfile,language):
+    if not text.strip():
+        # 1 second silence through ffmpeg is generated later if needed.
+        return None
+    voice = os.getenv(
+        "TTS_VOICE_HINGLISH" if language=="hinglish" else "TTS_VOICE_ENGLISH",
+        "en-IN-NeerjaNeural" if language=="hinglish" else "en-US-AriaNeural"
+    )
+    await edge_tts.Communicate(text,voice).save(str(outfile))
+    return outfile

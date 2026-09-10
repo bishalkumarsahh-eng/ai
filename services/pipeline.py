@@ -1,42 +1,73 @@
-import pathlib, tempfile, subprocess, os, shutil
+import pathlib,tempfile,shutil,os,asyncio
 from .story import make_story
-from .images import make_scene_image
+from .images import make_image
 from .voice import make_voice
-import imageio_ffmpeg
+from .lipsync import make_lipsync
+from .render import render_lipsync_video
 
-FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+async def generate_project(idea,language,minutes,progress=None):
+    async def p(x):
+        if progress: await progress(x)
 
-async def create_video(prompt, progress=None):
-    async def p(s):
-        if progress: await progress(s)
-    work=pathlib.Path(tempfile.mkdtemp(prefix="velocity_cartoon_"))
+    work=pathlib.Path(tempfile.mkdtemp(prefix="velocity_long_"))
     try:
-        await p("🧠 Writing story + scene plan…")
-        story=await make_story(prompt)
-        scenes=story.get("scenes",[])[:8]
-        if not scenes: raise RuntimeError("No scenes were generated.")
-        clips=[]
+        await p("🧠 Building the full story and chapters…")
+        story=await make_story(idea,language,minutes)
+        scenes=story["scenes"]
+        # Safety cap for a single Heroku job. Long videos are still built chapter-wise.
+        max_scenes=minutes*10
+        scenes=scenes[:max_scenes]
+
+        chapter_dirs={}
+        final_clips=[]
         for i,scene in enumerate(scenes,1):
-            await p(f"🎨 Generating cartoon scene {i}/{len(scenes)}…")
-            img=await make_scene_image(scene["visual"],work/f"scene_{i}.jpg")
-            await p(f"🗣️ Creating voice {i}/{len(scenes)}…")
-            audio=await make_voice(scene["dialogue"],work/f"voice_{i}.mp3")
-            clip=work/f"clip_{i}.mp4"; duration=float(scene.get("duration",6))
-            vf=("scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,"
-                "zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                "d=180:s=1920x1080:fps=30,format=yuv420p")
-            cmd=[FFMPEG,"-y","-loop","1","-i",str(img),"-i",str(audio),"-t",str(duration),"-vf",vf,
-                 "-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p","-r","30","-c:a","aac","-b:a","192k","-shortest",str(clip)]
-            r=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-            if r.returncode:
-                raise RuntimeError("FFmpeg scene render failed: " + r.stderr[-1000:])
-            clips.append(clip)
-        await p("🎞️ Joining scenes + optimizing YouTube output…")
-        concat=work/"concat.txt"; concat.write_text("\n".join("file '"+str(c)+"'" for c in clips))
-        output=work/"velocity_cartoon_1080p.mp4"
-        r=subprocess.run([FFMPEG,"-y","-f","concat","-safe","0","-i",str(concat),"-c","copy","-movflags","+faststart",str(output)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        if r.returncode: raise RuntimeError("FFmpeg join failed: "+r.stderr[-1000:])
-        await p("✅ Video ready — sending it to Telegram…")
-        return str(output)
+            ch=int(scene.get("chapter",1))
+            cdir=work/f"chapter_{ch}"
+            cdir.mkdir(exist_ok=True)
+            await p(f"📚 Chapter {ch} • Scene {i}/{len(scenes)}")
+
+            visual=scene["visual"]
+            # Strong consistency prompt is carried through every scene.
+            character_text="; ".join(
+                f'{c["name"]}: {c["description"]}' for c in story.get("characters",[])
+            )
+            prompt=(
+                "2D/3D high-quality animated cartoon film frame, cinematic lighting, "
+                "consistent character design, clean faces, front-facing when speaking. "
+                + character_text + " | " + visual
+            )
+            img=await make_image(prompt,cdir/f"scene_{i}.jpg")
+
+            dialogue=scene.get("dialogue","").strip()
+            if dialogue:
+                audio=await make_voice(dialogue,cdir/f"voice_{i}.mp3",language)
+                clip=cdir/f"talk_{i}.mp4"
+                try:
+                    await p(f"👄 Lip-sync • Chapter {ch} • Scene {i}/{len(scenes)}")
+                    await make_lipsync(img,audio,clip)
+                    final_clips.append(clip)
+                except Exception:
+                    # Don't silently create a fake lip-sync clip. Tell the user exactly why.
+                    raise
+            else:
+                # Narration-only scenes use a short image clip.
+                clip=cdir/f"scene_{i}.mp4"
+                import subprocess
+                subprocess.run([
+                    "ffmpeg","-y","-loop","1","-i",str(img),
+                    "-t",str(scene.get("duration",6)),
+                    "-vf","scale=1920:1080:force_original_aspect_ratio=decrease,"
+                          "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+                    "-c:v","libx264","-preset","veryfast","-r","30",
+                    "-an",str(clip)
+                ],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                final_clips.append(clip)
+
+        await p("🎞️ Joining all chapters into the final YouTube video…")
+        output=work/(story.get("title","velocity_cartoon").replace(" ","_")[:60]+".mp4")
+        render_lipsync_video(final_clips,output)
+        await p("✅ Final YouTube video ready.")
+        return str(output),story.get("title","Velocity Cartoon")
     except Exception:
-        shutil.rmtree(work,ignore_errors=True); raise
+        shutil.rmtree(work,ignore_errors=True)
+        raise
