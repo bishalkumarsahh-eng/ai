@@ -1,6 +1,6 @@
 import os, asyncio, shutil, subprocess, pathlib, time
-from .ffmpeg_utils import ffmpeg_bin, ffmpeg_env
 from gradio_client import Client, handle_file
+from .ffmpeg_util import ffmpeg_path
 
 DEFAULT_SPACE = "henrybit/SadTalker-Demo"
 
@@ -38,9 +38,9 @@ def _result_path(result):
 def _to_wav(audio, workdir):
     out = pathlib.Path(workdir) / "driving.wav"
     subprocess.run([
-        ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error",
+        ffmpeg_path(), "-y", "-hide_banner", "-loglevel", "error",
         "-i", str(audio), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out)
-    ], check=True, env=ffmpeg_env())
+    ], check=True)
     return out
 
 
