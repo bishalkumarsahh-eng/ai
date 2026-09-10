@@ -1,25 +1,31 @@
-# Velocity Cartoon GPU Worker
+# Velocity Cartoon GPU Lip-Sync Worker
 
-This is the GPU side of the long-video pipeline. The Heroku bot stays CPU-only and sends each
-portrait + WAV to this service. The worker runs SadTalker locally on an NVIDIA CUDA GPU and
-returns the generated MP4.
+The Telegram bot runs on Heroku as a worker. Lip-sync inference runs on a separate NVIDIA GPU server.
 
-## Deploy
-Use a GPU VM/container service that supports Docker + NVIDIA GPUs. Build this folder as a
-Docker image and expose port 8000 over HTTPS.
+## Heroku bot app
+
+Procfile:
+- `worker: python bot.py`
+- `web: uvicorn gpu_worker.app:app --host 0.0.0.0 --port $PORT`
+
+The web dyno is included only so `/` and `/health` work on the Heroku app. It is **not** a GPU runtime.
+
+Set these Heroku Config Vars on the bot app:
+
+`LIPSYNC_API_URL=https://YOUR-GPU-SERVER`
+`LIPSYNC_API_KEY=your-secret-key`
+
+## GPU server
+
+Build the `gpu_worker` directory with its Dockerfile on a service that provides an NVIDIA GPU and Docker + NVIDIA runtime.
 
 Set:
-GPU_WORKER_KEY=your-long-random-secret
-SADTALKER_TIMEOUT=900
 
-Then set these Heroku Config Vars:
-LIPSYNC_API_URL=https://YOUR-GPU-HOST
-LIPSYNC_API_KEY=the-same-secret
+`GPU_WORKER_KEY=the-same-secret-key`
+`SADTALKER_TIMEOUT=900`
 
-## Health
-GET /health
+Expose port 8000 over HTTPS and use that URL as `LIPSYNC_API_URL`.
 
 ## Important
-A persistent free public GPU is not generally available. Heroku remains the controller; the
-GPU worker needs a GPU runtime. SadTalker itself is designed for audio-driven talking-face
-animation from a still image. See the official project for model/checkpoint details.
+
+A normal Heroku web dyno does not provide NVIDIA CUDA. Adding a web dyno fixes the H14 routing error, but cannot turn Heroku into a GPU machine. The actual SadTalker process must run on the separate GPU server.
